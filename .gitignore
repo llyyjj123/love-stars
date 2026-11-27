@@ -84,6 +84,9 @@ docs/
 server/data/media/
 server/data/
 
+# ---------- Flutter 工具状态 ----------
+.flutter_tool_state
+
 # ---------- 原桌面端构建产物 ----------
 *.apk
 *.ipa
