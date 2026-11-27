@@ -1,0 +1,54 @@
+name: love_stars
+description: "情侣应用「星星」——签到赚星、发任务、兑换物品"
+publish_to: 'none'
+version: 1.3.1+6
+
+environment:
+  sdk: ^3.14.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # 状态管理
+  flutter_riverpod: ^2.6.1
+
+  # 路由
+  go_router: ^14.6.2
+
+  # 网络
+  dio: ^5.7.0
+
+  # 本地存储（令牌）
+  shared_preferences: ^2.3.3
+
+  # 实时
+  web_socket_channel: ^3.0.1
+
+  # 图片选择与压缩
+  image_picker: ^1.1.2
+
+  # 格式化
+  intl: ^0.19.0
+
+  # 读取真实版本号（关于页显示用）
+  package_info_plus: ^8.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+# shared_preferences_android 2.5.0 起改为依赖 jni 包，而 jni 带原生 C 代码，
+# 会强制 Gradle 去下载 NDK 28.2（约 2GB）才能打包。
+# 锁到 2.4.x：功能完全一样，但走的是老的 Java 实现，不需要 NDK。
+dependency_overrides:
+  shared_preferences_android: 2.4.28
+
+flutter:
+  uses-material-design: true
+
+  # 物品插画（源图 2048x2048，已压到 720x720 / 约 60KB 一张）
+  assets:
+    - assets/items/

@@ -1,0 +1,92 @@
+name: iOS 未签名 IPA
+
+# 在 GitHub 的 macOS 运行器上编译出**未签名**的 IPA。
+# 签名由你在 Windows 上用爱思助手完成（本仓库不接触任何证书）。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - '.github/workflows/ios-unsigned-ipa.yml'
+
+jobs:
+  build-ios:
+    name: 编译 iOS（不签名）
+    runs-on: macos-15
+    timeout-minutes: 40
+
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 检查 Flutter 工程是否存在
+        id: check
+        working-directory: .
+        run: |
+          if [ ! -f app/pubspec.yaml ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::app/pubspec.yaml 不存在，跳过构建。请先用 flutter create 生成工程。"
+          else
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 安装 Flutter
+        if: steps.check.outputs.exists == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.1'
+          channel: stable
+          cache: true
+
+      - name: 显示环境信息
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          flutter --version
+          xcodebuild -version
+
+      - name: 拉取依赖
+        if: steps.check.outputs.exists == 'true'
+        run: flutter pub get
+
+      - name: 代码检查（不阻断构建）
+        if: steps.check.outputs.exists == 'true'
+        continue-on-error: true
+        run: flutter analyze
+
+      - name: 编译 iOS（--no-codesign）
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          flutter build ios --release --no-codesign
+
+      - name: 打包成 IPA
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          set -euo pipefail
+          APP_DIR="build/ios/iphoneos/Runner.app"
+          if [ ! -d "$APP_DIR" ]; then
+            echo "::error::未找到 $APP_DIR"
+            exit 1
+          fi
+          rm -rf build/ipa && mkdir -p build/ipa/Payload
+          cp -R "$APP_DIR" build/ipa/Payload/
+          cd build/ipa
+          zip -qry LoveStars-unsigned.ipa Payload
+          ls -lh LoveStars-unsigned.ipa
+          shasum -a 256 LoveStars-unsigned.ipa | tee LoveStars-unsigned.ipa.sha256
+
+      - name: 上传产物
+        if: steps.check.outputs.exists == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-unsigned-ipa
+          path: |
+            app/build/ipa/LoveStars-unsigned.ipa
+            app/build/ipa/LoveStars-unsigned.ipa.sha256
+          retention-days: 30
+          if-no-files-found: error

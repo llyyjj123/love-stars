@@ -1,0 +1,225 @@
+// 账本内核 + 兑换的数据库 schema
+// 与 docs/情侣应用-星星-实现说明-v1.2.md 对齐
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------- 用户 ----------
+model User {
+  id           String   @id @default(uuid())
+  slot         Int      @unique          // 1 = A(iOS), 2 = B(Android)
+  username     String   @unique
+  passwordHash String
+  displayName  String
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  accounts     Account[]
+  checkIns     CheckIn[]
+  streak       CheckinStreak?
+  tasksPublished Task[] @relation("publisher")
+  tasksAssigned  Task[] @relation("assignee")
+  redemptions  Redemption[] @relation("redeemer")
+  fulfillments Redemption[] @relation("fulfiller")
+}
+
+// ---------- 账本：三个虚拟账户 ----------
+model Account {
+  id        String   @id @default(uuid())
+  kind      String                        // user | issue | escrow
+  ownerId   String?
+  owner     User?    @relation(fields: [ownerId], references: [id])
+  balance   Int      @default(0)          // issue 恒为负，escrow 恒为正，user 不可为负
+  version   Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  entries   LedgerEntry[]
+
+  @@unique([kind, ownerId])
+  @@index([kind])
+}
+
+// 一次业务操作（幂等单位）
+model LedgerOp {
+  id        String   @id @default(uuid())
+  bizType   String   // opening|checkin|checkin_cycle|task_reward|task_escrow|task_settle|task_refund|burn|adjust
+  bizId     String
+  amount    Int
+  memo      String?
+  createdAt DateTime @default(now())
+
+  entries   LedgerEntry[]
+
+  @@unique([bizType, bizId])   // ★ 幂等的最终防线
+  @@index([createdAt])
+}
+
+// 分录：一次 op 产生两条，一借一贷
+model LedgerEntry {
+  id           BigInt   @id @default(autoincrement())
+  opId         String
+  op           LedgerOp @relation(fields: [opId], references: [id])
+  accountId    String
+  account      Account  @relation(fields: [accountId], references: [id])
+  delta        Int
+  balanceAfter Int
+  createdAt    DateTime @default(now())
+
+  @@index([accountId, id])
+  @@index([opId])
+}
+
+// ---------- 系统审计 ----------
+// 只记录系统行为；业务事实仍以 Task / LedgerOp / Outbox 为准。
+model AuditLog {
+  id        String   @id @default(uuid())
+  event     String
+  actorId   String?
+  targetId  String?
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  @@index([event, createdAt])
+  @@index([targetId])
+}
+
+// ---------- 签到 ----------
+model CheckIn {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  dateKey     String   // 'yyyy-MM-dd'（服务端时区）
+  streakDay   Int
+  basePoints  Int
+  bonusPoints Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, dateKey])
+}
+
+model CheckinStreak {
+  userId        String   @id
+  user          User     @relation(fields: [userId], references: [id])
+  currentStreak Int      @default(0)
+  lastDateKey   String?
+  updatedAt     DateTime @updatedAt
+}
+
+// ---------- 任务 ----------
+model Task {
+  id             String   @id @default(uuid())
+  origin         String   // system | custom
+  publisherId    String?
+  publisher      User?    @relation("publisher", fields: [publisherId], references: [id])
+  assigneeId     String
+  assignee       User     @relation("assignee", fields: [assigneeId], references: [id])
+  title          String
+  description    String?
+  reward         Int
+  status         String   @default("assigned")
+  // pending|assigned|accepted|submitted|confirmed|declined|abandoned|cancelled|expired
+  expiresAt      DateTime?  // P-44 预留，不启用
+  timeLimitHours Int?       // 时限（小时），null = 不限时
+  acceptedAt     DateTime?  // 接受时间，计时起点
+  deadlineAt     DateTime?  // 截止时间 = acceptedAt + timeLimitHours
+  submittedAt    DateTime?
+  submitPhotoUrl String?    // 提交时附的照片
+  submitNote     String?    // 提交时附的文案
+  confirmedAt    DateTime?
+  confirmedBy    String?    // 用户 id 或 'system'
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status, submittedAt])
+  @@index([assigneeId, status])
+}
+
+// ---------- 物品（开发方预设，用户只读） ----------
+model Item {
+  id          String   @id @default(uuid())
+  name        String
+  emoji       String?
+  description String?
+  coverUrl    String?
+  priceStars  Int      // 必填
+  category    String?  // P-35 预留，当前不分类
+  fulfillDays Int?     // 预留，当前不设超时
+  status      String   @default("listed")  // listed | delisted
+  sortKey     Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  redemptions Redemption[]
+
+  @@index([status, sortKey])
+}
+
+// ---------- 兑换 ----------
+model Redemption {
+  id           String   @id @default(uuid())
+  itemId       String
+  item         Item     @relation(fields: [itemId], references: [id])
+  // 快照：物品改名/改价后历史不变
+  itemName     String
+  itemEmoji    String?
+  priceStars   Int      // 单价快照
+  quantity     Int      @default(1)
+  totalStars   Int      // = priceStars * quantity
+
+  redeemerId   String
+  redeemer     User     @relation("redeemer", fields: [redeemerId], references: [id])
+  fulfillBy    String
+  fulfiller    User     @relation("fulfiller", fields: [fulfillBy], references: [id])
+
+  status       String   @default("pending")  // pending | fulfilled
+  note         String?
+  photoUrl     String?
+  fulfillNote  String?
+  fulfilledAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  nudges       Nudge[]
+
+  @@index([fulfillBy, status, createdAt])
+  @@index([redeemerId, createdAt])
+}
+
+// 催一催（24 小时限一次）
+model Nudge {
+  id           String     @id @default(uuid())
+  redemptionId String
+  redemption   Redemption @relation(fields: [redemptionId], references: [id])
+  fromId       String
+  createdAt    DateTime   @default(now())
+
+  @@index([redemptionId, createdAt])
+}
+
+// ---------- outbox（事务内只写，异步发推送） ----------
+model Outbox {
+  id        String    @id @default(uuid())
+  event     String
+  toUserId  String
+  payload   Json
+  attempts  Int       @default(0)
+  lastError String?
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([sentAt, createdAt])
+}
+
+// ---------- 配置 ----------
+model AppConfig {
+  id        Int      @id @default(1)
+  payload   Json
+  version   Int      @default(1)
+  updatedAt DateTime @updatedAt
+}

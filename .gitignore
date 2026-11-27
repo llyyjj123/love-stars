@@ -1,0 +1,90 @@
+# ---------- 通用 ----------
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.p12
+*.keystore
+*.jks
+key.properties
+
+# ---------- Flutter / Dart ----------
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+.idea/
+.vscode/
+android/.gradle/
+android/local.properties
+android/key.properties
+android/app/*.jks
+android/app/*.keystore
+android/app/upload-keystore.jks
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Runner/GeneratedPluginRegistrant.*
+*.ipa
+*.apk
+*.aab
+
+# ---------- Node / NestJS ----------
+node_modules/
+dist/
+coverage/
+.nest/
+*.tsbuildinfo
+pnpm-lock.yaml.bak
+
+# ---------- 数据库 / 本地数据 ----------
+*.sqlite
+*.sqlite3
+*.db
+postgres-data/
+redis-data/
+
+# ---------- 上传的媒体（不入库） ----------
+data/media/
+uploads/
+
+# ---------- 设计稿导出（体积大，按需单独管理） ----------
+design/exports/
+# ---------- 本地环境备份（含完整 PATH，勿入库） ----------
+.env-backup/
+
+# ---------- 临时输出 ----------
+.doctor*.txt
+.v.txt
+
+# ---------- 设计/调试工具产物（不入公开仓库） ----------
+.dsh-pilot/
+.figma/
+.creative-design/
+
+# ---------- 个人开发文档（含账号、服务器信息，留在本地） ----------
+docs/
+全流程教程.md
+测试流程教程.md
+新会话接手须知.md
+
+# ---------- 服务端本地数据 ----------
+server/data/media/
+server/data/
+
+# ---------- 原桌面端构建产物 ----------
+*.apk
+*.ipa
+LoveStars-*.apk
