@@ -25,12 +25,15 @@ class LoveStarsApp extends ConsumerStatefulWidget {
   ConsumerState<LoveStarsApp> createState() => _LoveStarsAppState();
 }
 
-class _LoveStarsAppState extends ConsumerState<LoveStarsApp> {
+class _LoveStarsAppState extends ConsumerState<LoveStarsApp> with WidgetsBindingObserver {
   StreamSubscription<String>? _nudgeSub;
 
   @override
   void initState() {
     super.initState();
+    // iOS 切后台后 WebSocket 会被系统断掉，回前台必须重连并全量刷新，
+    // 否则界面会停在切走那一刻的旧状态（看不到对方提交、没有确认按钮）。
+    WidgetsBinding.instance.addObserver(this);
 
     // 启动时尝试恢复会话，成功后连 WebSocket
     Future.microtask(() async {
@@ -51,7 +54,27 @@ class _LoveStarsAppState extends ConsumerState<LoveStarsApp> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    if (ref.read(sessionProvider).value?.isLoggedIn != true) return;
+    // 重连 WS（断线重连定时器可能还没到），再全量失效，让每个页面自己重取。
+    ref.read(realtimeProvider).connect();
+    ref.invalidate(walletProvider);
+    ref.invalidate(bothWalletsProvider);
+    ref.invalidate(tasksProvider);
+    ref.invalidate(pendingConfirmProvider);
+    ref.invalidate(systemTaskProvider);
+    ref.invalidate(taskByIdProvider);
+    ref.invalidate(checkInStateProvider);
+    ref.invalidate(myRedemptionsProvider);
+    ref.invalidate(inboxRedemptionsProvider);
+    ref.invalidate(giftsSentProvider);
+    ref.invalidate(giftsReceivedProvider);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _nudgeSub?.cancel();
     super.dispose();
   }

@@ -382,6 +382,63 @@ async function main() {
     else bad('should be rate limited, got ' + n2.status);
   } else info('no pending redemption to nudge');
 
+  // ---------- 12b. 送星星 ----------
+  step('12b. Gift');
+  {
+    const w1 = await api('/wallet', { token: ta });
+    const balBefore = w1.body?.data?.balance ?? 0;
+    const g = await api('/gifts', {
+      method: 'POST', token: ta, body: { amount: 1, note: 'smoke test' },
+      idem: 'smoke-gift-' + Date.now(),
+    });
+    if (g.body?.data?.gift?.amount === 1) ok('gift sent (1 star)');
+    else bad('gift failed', JSON.stringify(g.body));
+
+    const w2 = await api('/wallet', { token: ta });
+    if ((w2.body?.data?.balance ?? 0) === balBefore - 1) ok('sender balance -1');
+    else bad('sender balance wrong');
+
+    const sent = await api('/gifts?scope=sent', { token: ta });
+    if ((sent.body?.data ?? []).some((x) => x.amount === 1)) ok('appears in sent list');
+    else bad('sent list missing gift');
+
+    const received = await api('/gifts?scope=received', { token: tb });
+    if ((received.body?.data ?? []).some((x) => x.note === 'smoke test')) ok('partner sees it in received list');
+    else bad('received list missing gift');
+
+    const zero = await api('/gifts', { method: 'POST', token: ta, body: { amount: 0 } });
+    if (zero.status === 400 && zero.body?.error?.code === 'GIFT_AMOUNT_INVALID') ok('amount 0 rejected (400)');
+    else bad('amount 0 should be rejected, got ' + zero.status);
+
+    const tooMuch = await api('/gifts', { method: 'POST', token: ta, body: { amount: 999999 } });
+    if (tooMuch.status === 409 || tooMuch.status === 429) ok('over-limit rejected (' + tooMuch.status + ')');
+    else bad('over-limit should be rejected, got ' + tooMuch.status);
+
+    const rec0 = await api('/reconcile', { token: ta });
+    if (rec0.body?.data?.sum === 0) ok('sum still 0 after gift');
+    else bad('gift broke ledger invariant');
+  }
+
+  // ---------- 12c. 提交后禁止取消 ----------
+  step('12c. Cancel after submit');
+  {
+    const p = await api('/tasks', {
+      method: 'POST', token: ta,
+      body: { title: 'smoke 不许取消', reward: 1 },
+      idem: 'smoke-nocancel-' + Date.now(),
+    });
+    const tid = p.body?.data?.id;
+    if (tid) {
+      await api('/tasks/' + tid + '/accept', { method: 'POST', token: tb });
+      await api('/tasks/' + tid + '/submit', { method: 'POST', token: tb, body: { note: 'done' } });
+      const c = await api('/tasks/' + tid + '/cancel', { method: 'POST', token: ta });
+      if (c.status === 409 && c.body?.error?.code === 'TASK_ALREADY_SUBMITTED') ok('publisher cannot cancel after submit (409)');
+      else bad('cancel after submit should be 409, got ' + c.status);
+      // 收尾：确认掉，别留脏数据
+      await api('/tasks/' + tid + '/confirm', { method: 'POST', token: ta });
+    } else bad('could not publish task for cancel test');
+  }
+
   // ---------- 13. 对账 ----------
   step('13. Reconcile');
   const rec = await api('/reconcile', { token: ta });

@@ -17,6 +17,8 @@ export type BizType =
   | 'task_escrow'
   | 'task_settle'
   | 'task_refund'
+  | 'task_penalty'
+  | 'gift'
   | 'burn'
   | 'adjust';
 

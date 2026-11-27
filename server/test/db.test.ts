@@ -1,7 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { prisma } from '../src/prisma';
-import { PrismaService, dateKeyOf, OPENING, REDEMPTION } from '../src/prisma-service';
+import { PrismaService, dateKeyOf, OPENING, REDEMPTION, GIFT } from '../src/prisma-service';
 import { hashPassword } from '../src/auth';
 
 const svc = new PrismaService(prisma);
@@ -27,6 +27,7 @@ async function clean() {
   await prisma.auditLog.deleteMany();
   await prisma.nudge.deleteMany();
   await prisma.outbox.deleteMany();
+  await prisma.gift.deleteMany();
   await prisma.redemption.deleteMany();
   await prisma.ledgerEntry.deleteMany();
   await prisma.ledgerOp.deleteMany();
@@ -57,7 +58,7 @@ test('数据库连接正常，12 张表已建', async () => {
   const rows = await prisma.$queryRaw<{ tablename: string }[]>`
     SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY 1`;
   const names = rows.map((r) => r.tablename);
-  for (const t of ['Account', 'LedgerOp', 'LedgerEntry', 'CheckIn', 'Task', 'Item', 'Redemption', 'Nudge', 'Outbox', 'User']) {
+  for (const t of ['Account', 'LedgerOp', 'LedgerEntry', 'CheckIn', 'Task', 'Item', 'Redemption', 'Nudge', 'Outbox', 'User', 'Gift']) {
     assert.ok(names.includes(t), 'missing table ' + t);
   }
 });
@@ -458,6 +459,119 @@ test('outbox：兑换和兑现都写入，且各发给正确的人', async () =>
   const fulfilled = await prisma.outbox.findMany({ where: { event: 'redemption.fulfilled', payload: { path: ['redemptionId'], equals: r.id } } });
   assert.equal(fulfilled.length, 1);
   assert.equal(fulfilled[0].toUserId, 'user-a', '兑现通知发给兑换方');
+});
+
+// ---------- 送星星 ----------
+const code = (c: string) => (e: any) => e.code === c;
+
+test('送星星：账户间划转，双方余额一减一增，sum 仍为 0', async () => {
+  await seed();
+  const before = { a: await svc.balanceOf('user-a'), b: await svc.balanceOf('user-b') };
+  const r = await svc.sendGift('user-a', 'user-b', 5, '买杯奶茶');
+  assert.equal(r.gift.amount, 5);
+  assert.equal(r.gift.note, '买杯奶茶');
+  assert.equal(await svc.balanceOf('user-a'), before.a - 5);
+  assert.equal(await svc.balanceOf('user-b'), before.b + 5);
+  const rec = await svc.reconcile();
+  assert.equal(rec.ok, true);
+  assert.equal(rec.sum, 0);
+});
+
+test('送星星：不发行不销毁，净发行量不变', async () => {
+  const before = await svc.reconcile();
+  await svc.sendGift('user-b', 'user-a', 3);
+  const after = await svc.reconcile();
+  assert.equal(after.netIssued, before.netIssued);
+  assert.equal(after.totalIssued, before.totalIssued);
+  assert.equal(after.burned, before.burned);
+});
+
+test('送星星：不能送给自己 / 金额非法被拒', async () => {
+  await assert.rejects(() => svc.sendGift('user-a', 'user-a', 1), code('GIFT_NOT_ALLOWED'));
+  await assert.rejects(() => svc.sendGift('user-a', 'user-b', 0), code('GIFT_AMOUNT_INVALID'));
+  await assert.rejects(() => svc.sendGift('user-a', 'user-b', -3), code('GIFT_AMOUNT_INVALID'));
+  await assert.rejects(() => svc.sendGift('user-a', 'user-b', 1.5), code('GIFT_AMOUNT_INVALID'));
+});
+
+test('送星星：余额不足整笔回滚，不留 Gift 记录', async () => {
+  await prisma.gift.deleteMany();
+  const before = await prisma.gift.count();
+  const balance = await svc.balanceOf('user-a');
+  // 金额超过余额但仍在单日上限内，才能走到余额校验
+  await assert.rejects(() => svc.sendGift('user-a', 'user-b', balance + 1), code('STARS_INSUFFICIENT'));
+  assert.equal(await prisma.gift.count(), before);
+});
+
+test('送星星：单日累计超过上限被拒', async () => {
+  await prisma.gift.deleteMany();
+  const original = GIFT.dailyLimit;
+  // 余额只有 20，把上限临时压到 5 才能验证累计逻辑
+  (GIFT as any).dailyLimit = 5;
+  try {
+    await svc.sendGift('user-a', 'user-b', 4);
+    await assert.rejects(() => svc.sendGift('user-a', 'user-b', 2), code('GIFT_DAILY_LIMIT'));
+    // 正好到上限可以
+    await svc.sendGift('user-a', 'user-b', 1);
+  } finally {
+    (GIFT as any).dailyLimit = original;
+  }
+});
+
+test('送星星：留言超长被拒，写 outbox 给收礼人', async () => {
+  await assert.rejects(() => svc.sendGift('user-b', 'user-a', 1, 'x'.repeat(101)), code('GIFT_NOTE_TOO_LONG'));
+  const before = await prisma.outbox.count({ where: { toUserId: 'user-a', event: 'gift.received' } });
+  await svc.sendGift('user-b', 'user-a', 1, '晚安');
+  const after = await prisma.outbox.count({ where: { toUserId: 'user-a', event: 'gift.received' } });
+  assert.equal(after, before + 1);
+});
+
+test('小纸条：送出和收到的列表都按时间倒序', async () => {
+  const sent = await svc.listGifts('user-a', 'sent');
+  const received = await svc.listGifts('user-a', 'received');
+  assert.ok(sent.length > 0);
+  assert.ok(received.length > 0);
+  for (let i = 1; i < sent.length; i++) {
+    assert.ok(sent[i - 1].createdAt >= sent[i].createdAt, 'sent 未倒序');
+  }
+  assert.ok(sent.every((g) => g.fromId === 'user-a'));
+  assert.ok(received.every((g) => g.toId === 'user-a'));
+});
+
+// ---------- 提交后禁止取消 ----------
+test('对方已提交后，发布方不能再取消退款', async () => {
+  const t = await svc.publishTask('user-a', 'user-b', '不许白嫖', 2, null);
+  await svc.taskAction(t.id, 'user-b', 'accept');
+  await svc.taskAction(t.id, 'user-b', 'submit', { note: '做完了' });
+  await assert.rejects(() => svc.taskAction(t.id, 'user-a', 'cancel'), code('TASK_ALREADY_SUBMITTED'));
+  const row = await prisma.task.findUnique({ where: { id: t.id } });
+  assert.equal(row?.status, 'submitted');
+});
+
+test('系统任务重新加入时清空上一轮的提交内容', async () => {
+  // 模板池不在 seed 里，这里手动造一条，避免依赖外部数据
+  const tpl = await prisma.task.create({
+    data: {
+      id: 'sys-test-' + Date.now(),
+      origin: 'system',
+      assigneeId: 'user-a',
+      title: '测试模板',
+      reward: 1,
+      status: 'pending',
+    },
+  });
+  await svc.joinSystemTask(tpl.id, 'user-a');
+  await svc.taskAction(tpl.id, 'user-a', 'accept');
+  await svc.taskAction(tpl.id, 'user-a', 'submit', { note: '第一轮', photoUrl: 'http://x/media/aaaaaaaaaaaaaaaa.jpg' });
+  // 放弃 → 系统任务回池子
+  await svc.taskAction(tpl.id, 'user-a', 'cancel');
+  const back = await prisma.task.findUnique({ where: { id: tpl.id } });
+  assert.equal(back?.status, 'pending');
+  await svc.joinSystemTask(tpl.id, 'user-a');
+  const again = await prisma.task.findUnique({ where: { id: tpl.id } });
+  assert.equal(again?.submitNote, null);
+  assert.equal(again?.submitPhotoUrl, null);
+  assert.equal(again?.acceptedAt, null);
+  assert.equal(again?.deadlineAt, null);
 });
 
 test('最终对账：sum(balance) = 0，数字自洽', async () => {

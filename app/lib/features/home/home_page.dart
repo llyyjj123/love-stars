@@ -133,7 +133,7 @@ class HomePage extends ConsumerWidget {
                 const SizedBox(width: 10),
                 _quick(context, '物品', Icons.card_giftcard, () => context.go('/items')),
                 const SizedBox(width: 10),
-                _quick(context, '账本', Icons.receipt_long, () => context.push('/me/ledger')),
+                _quick(context, '送星星', Icons.favorite, () => context.push('/me/gift')),
               ],
             ),
             const SizedBox(height: 16),

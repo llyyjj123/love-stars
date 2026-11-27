@@ -10,6 +10,9 @@ import 'package:love_stars/features/auth/login_page.dart';
 import 'package:love_stars/features/profile/ledger_page.dart';
 import 'package:love_stars/features/tasks/tasks_page.dart';
 import 'package:love_stars/features/checkin/checkin_page.dart';
+import 'package:love_stars/features/gifts/gift_page.dart';
+import 'package:love_stars/features/gifts/notes_page.dart';
+import 'package:love_stars/features/tasks/task_detail_page.dart';
 import 'package:love_stars/features/items/item_art.dart';
 import 'package:love_stars/features/items/items_page.dart';
 import 'package:love_stars/widgets/app_card.dart';
@@ -57,8 +60,11 @@ class FakeApi extends ApiClient {
     return currentSystemTask!;
   }
 
+  List<Task> doneTasks = [];
+
   @override
-  Future<List<Task>> tasks({String scope = 'all'}) async => [];
+  Future<List<Task>> tasks({String scope = 'all'}) async =>
+      scope == 'done' ? doneTasks : [];
 
   @override
   Future<List<Item>> items() async => itemList;
@@ -68,6 +74,24 @@ class FakeApi extends ApiClient {
 
   @override
   Future<List<Task>> pendingConfirm() async => [];
+
+  Task? taskDetail;
+  List<Gift> giftsSent = [];
+  List<Gift> giftsReceived = [];
+  int giftCalls = 0;
+
+  @override
+  Future<Task?> taskById(String taskId) async => taskDetail;
+
+  @override
+  Future<List<Gift>> gifts({String scope = 'sent'}) async =>
+      scope == 'sent' ? giftsSent : giftsReceived;
+
+  @override
+  Future<Map<String, dynamic>> sendGift({required int amount, String? note}) async {
+    giftCalls++;
+    return {'gift': {'id': 'g1', 'fromId': _me, 'toId': 'user-b', 'amount': amount, 'note': note}};
+  }
 
   @override
   Future<Map<String, dynamic>> checkInState() async => checkinState ?? {'currentStreak': 0, 'lastDateKey': null, 'today': '2026-11-26'};
@@ -82,10 +106,37 @@ class _NoopStore extends TokenStore {
   Future<void> clear() async {}
 }
 
-Widget harness(Widget home, ApiClient api) => ProviderScope(
-      overrides: [apiClientProvider.overrideWithValue(api)],
-      child: MaterialApp(theme: buildTheme(), home: home),
-    );
+/// 直接给一个已登录的会话，省掉 bootstrap 网络往返。
+/// 详情页要靠 myId 判断「我是执行人还是发布人」，没会话会把角色算反。
+class _FakeSession extends SessionNotifier {
+  _FakeSession(ApiClient api, TokenStore tokens, Ref ref, Session session)
+      : super(api, tokens, ref) {
+    state = AsyncValue.data(session);
+  }
+}
+
+Widget harness(Widget home, ApiClient api, {String me = 'user-a'}) {
+  final partnerId = me == 'user-a' ? 'user-b' : 'user-a';
+  return ProviderScope(
+    overrides: [
+      apiClientProvider.overrideWithValue(api),
+      sessionProvider.overrideWith((ref) => _FakeSession(
+            api,
+            ref.watch(tokenStoreProvider),
+            ref,
+            Session(
+              user: User(id: me, username: me, displayName: me == 'user-a' ? '杰' : '媛'),
+              partner: User(
+                id: partnerId,
+                username: partnerId,
+                displayName: partnerId == 'user-b' ? '媛' : '杰',
+              ),
+            ),
+          )),
+    ],
+    child: MaterialApp(theme: buildTheme(), home: home),
+  );
+}
 
 void main() {
   testWidgets('签到页：第 7 天奖励固定显示 +5★，不随当天变化', (tester) async {
@@ -300,5 +351,209 @@ void main() {
     expect(find.text('为 TA 倒一杯温水'), findsOneWidget);
     expect(find.text('抽一个'), findsNothing);
     expect(api.drawCalls, 0);
+  });
+
+  // ---------- v1.5.0 新增 ----------
+
+  testWidgets('任务详情：对方提交后，确认方看到提交内容 + 确认按钮', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 我是 user-a，任务由 user-b 执行并已提交（自定义任务，我是发布人）
+    final api = FakeApi('user-a')
+      ..taskDetail = Task(
+        id: 't1', origin: 'custom', publisherId: 'user-a', assigneeId: 'user-b',
+        title: '一起看一部电影', reward: 4, status: 'submitted',
+        submittedAt: DateTime(2026, 11, 28, 1, 41),
+        submitNote: '看完了，很好看', submitPhotoUrl: 'http://test/x.jpg',
+      );
+    await tester.pumpWidget(harness(const TaskDetailPage(taskId: 't1'), api));
+    await tester.pumpAndSettle();
+
+    expect(find.text('TA 的提交'), findsOneWidget, reason: '执行人是 TA，应显示 TA 的提交');
+    expect(find.text('看完了，很好看'), findsOneWidget);
+    expect(find.textContaining('确认完成，给 4 星'), findsOneWidget, reason: '确认方必须有确认按钮');
+  });
+
+  testWidgets('任务详情：系统任务被对方提交后，也有确认按钮', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 系统任务没有 publisherId：曾经这里没有按钮，只能等 7 天自动确认
+    final api = FakeApi('user-a')
+      ..taskDetail = Task(
+        id: 't2', origin: 'system', assigneeId: 'user-b',
+        title: '陪 TA 散步十分钟', reward: 2, status: 'submitted',
+        submittedAt: DateTime(2026, 11, 28, 1, 41),
+        submitNote: '走完了',
+      );
+    await tester.pumpWidget(harness(const TaskDetailPage(taskId: 't2'), api));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('确认完成，给 2 星'), findsOneWidget, reason: '系统任务的确认方也要能确认');
+  });
+
+  testWidgets('任务详情：我自己提交的，标签是「我的提交」', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = FakeApi('user-a')
+      ..taskDetail = Task(
+        id: 't3', origin: 'custom', publisherId: 'user-b', assigneeId: 'user-a',
+        title: '一起看一部电影', reward: 4, status: 'submitted',
+        submittedAt: DateTime(2026, 11, 28, 1, 41),
+        submitNote: 'gg',
+      );
+    await tester.pumpWidget(harness(const TaskDetailPage(taskId: 't3'), api));
+    await tester.pumpAndSettle();
+
+    expect(find.text('我的提交'), findsOneWidget, reason: '执行人是我，不能写死「TA 的提交」');
+    expect(find.text('TA 的提交'), findsNothing);
+    expect(find.textContaining('确认完成'), findsNothing, reason: '执行人不能自己确认');
+    expect(find.text('已提交，等 TA 确认'), findsOneWidget);
+  });
+
+  testWidgets('任务详情：已完成显示完成详情，含确认人/时间', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = FakeApi('user-a')
+      ..taskDetail = Task(
+        id: 't4', origin: 'custom', publisherId: 'user-b', assigneeId: 'user-a',
+        title: '杰宝，等下睡前要给我发晚安', reward: 1, status: 'confirmed',
+        acceptedAt: DateTime(2026, 11, 27, 0, 50),
+        submittedAt: DateTime(2026, 11, 27, 0, 51),
+        submitNote: '111',
+        confirmedAt: DateTime(2026, 11, 27, 0, 53),
+        confirmedBy: 'user-b',
+      );
+    await tester.pumpWidget(harness(const TaskDetailPage(taskId: 't4'), api));
+    await tester.pumpAndSettle();
+
+    expect(find.text('完成详情'), findsOneWidget, reason: '归档任务要能看到完成详情');
+    expect(find.text('TA 确认的'), findsOneWidget);
+    expect(find.text('111'), findsOneWidget, reason: '归档也要能看到提交内容');
+  });
+
+  testWidgets('归档任务可以点开查看详情', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = FakeApi('user-a')
+      ..doneTasks = [
+        Task(id: 'd1', origin: 'custom', publisherId: 'user-a', assigneeId: 'user-b',
+            title: '已经完成的事', reward: 2, status: 'confirmed'),
+      ];
+    await tester.pumpWidget(harness(const TasksPage(), api));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('已完成 1 个'));
+    await tester.pumpAndSettle();
+    expect(find.text('已经完成的事'), findsOneWidget);
+
+    // 点进去应该触发导航（这里用 InkWell 存在性验证可点）
+    final tappable = find.ancestor(of: find.text('已经完成的事'), matching: find.byType(InkWell));
+    expect(tappable, findsWidgets, reason: '归档行必须可点击');
+  });
+
+  testWidgets('送星星：默认 5 颗，可切预设，带留言提交', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = FakeApi('user-a');
+    await tester.pumpWidget(harness(const GiftPage(), api));
+    await tester.pumpAndSettle();
+
+    expect(find.text('送 5 颗星'), findsOneWidget);
+    await tester.tap(find.text('10 颗'));
+    await tester.pumpAndSettle();
+    expect(find.text('送 10 颗星'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).last, '买杯奶茶');
+    await tester.tap(find.text('送 10 颗星'));
+    await tester.pumpAndSettle();
+    expect(api.giftCalls, 1);
+  });
+
+  testWidgets('送星星：超过余额时给出提示且不发请求', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = FakeApi('user-a'); // 余额 37
+    await tester.pumpWidget(harness(const GiftPage(), api));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('自定义'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, '999');
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('送 999 颗星'));
+    await tester.pumpAndSettle();
+
+    expect(api.giftCalls, 0, reason: '余额不足不能发请求');
+    expect(find.textContaining('送不了 999 颗'), findsOneWidget);
+  });
+
+  testWidgets('小纸条：收到的留言按时间显示', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = FakeApi('user-a')
+      ..giftsReceived = [
+        Gift(id: 'g1', fromId: 'user-b', toId: 'user-a', amount: 5,
+             note: '今天辛苦啦', createdAt: DateTime(2026, 11, 28, 1, 30)),
+      ];
+    await tester.pumpWidget(harness(const NotesPage(), api));
+    await tester.pumpAndSettle();
+
+    expect(find.text('收到 5 颗星'), findsOneWidget);
+    expect(find.text('「今天辛苦啦」'), findsOneWidget);
+  });
+
+  testWidgets('小纸条：没有留言时显示占位，不显示空引号', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = FakeApi('user-a')
+      ..giftsReceived = [
+        Gift(id: 'g2', fromId: 'user-b', toId: 'user-a', amount: 2, createdAt: DateTime(2026, 11, 28, 1, 30)),
+      ];
+    await tester.pumpWidget(harness(const NotesPage(), api));
+    await tester.pumpAndSettle();
+
+    expect(find.text('（没有留言）'), findsOneWidget);
+    expect(find.text('「」'), findsNothing);
+  });
+
+  testWidgets('物品页标题是「我们的小确幸」，不是「我们的小任务」', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final api = FakeApi('user-a');
+    await tester.pumpWidget(harness(const ItemsPage(), api));
+    await tester.pumpAndSettle();
+
+    expect(find.text('我们的小确幸'), findsOneWidget);
+    expect(find.text('我们的小任务'), findsNothing);
   });
 }

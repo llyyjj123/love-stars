@@ -569,28 +569,34 @@ class _DoneSectionState extends State<_DoneSection> {
               children: [
                 for (var i = 0; i < widget.tasks.length; i++) ...[
                   if (i > 0) const Divider(height: 1, color: AppColors.border),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.check_circle, size: 18, color: AppColors.green),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(widget.tasks[i].title, style: const TextStyle(fontSize: 14, color: AppColors.text)),
-                              Text(
-                                widget.tasks[i].origin == 'system' ? '系统任务 · 已完成' : '一起做 · 已完成',
-                                style: AppText.caption,
-                              ),
-                            ],
+                  // 归档任务也要能点开看完成详情（照片、附言、谁确认的）
+                  InkWell(
+                    onTap: () => context.push('/tasks/${widget.tasks[i].id}'),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.check_circle, size: 18, color: AppColors.green),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(widget.tasks[i].title, style: const TextStyle(fontSize: 14, color: AppColors.text)),
+                                Text(
+                                  widget.tasks[i].origin == 'system' ? '系统任务 · 已完成' : '一起做 · 已完成',
+                                  style: AppText.caption,
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        Text('+${widget.tasks[i].reward}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text3)),
-                        const SizedBox(width: 2),
-                        const Text('★', style: TextStyle(fontSize: 11, color: AppColors.text3)),
-                      ],
+                          Text('+${widget.tasks[i].reward}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text3)),
+                          const SizedBox(width: 2),
+                          const Text('★', style: TextStyle(fontSize: 11, color: AppColors.text3)),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.chevron_right, size: 14, color: AppColors.text3),
+                        ],
+                      ),
                     ),
                   ),
                 ],

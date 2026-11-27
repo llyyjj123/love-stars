@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../core/nav.dart';
 import '../../core/theme/tokens.dart';
 import '../../data/models/models.dart';
 import '../../data/providers/providers.dart';
@@ -30,8 +31,9 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
       ref.invalidate(bothWalletsProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_actionLabel(action))));
-        if (action == 'confirm' || action == 'decline' || action == 'cancel') {
-          context.pop();
+        // 直接深链进来时没有上一页，pop 会抛 "There is nothing to pop"
+        if ((action == 'confirm' || action == 'decline' || action == 'cancel') && context.canPop()) {
+          popOrHome(context);
         }
       }
     } catch (e) {
@@ -284,6 +286,10 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
           }
           final isAssignee = t.assigneeId == myId;
           final isPublisher = t.publisherId == myId;
+          // 系统任务没有 publisherId，确认方固定是「另一位」。
+          // 之前只判断 isPublisher，导致系统任务被对方完成后永远没有确认按钮。
+          // 「TA 的提交」这种文案也必须按角色算，不能写死。
+          final submitterName = isAssignee ? '我的提交' : 'TA 的提交';
 
           return Column(
             children: [
@@ -293,7 +299,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                 child: Row(
                   children: [
                     IconButton(
-                      onPressed: () => context.pop(),
+                      onPressed: () => popOrHome(context),
                       icon: const Icon(Icons.arrow_back),
                       style: IconButton.styleFrom(backgroundColor: AppColors.surface),
                     ),
@@ -307,7 +313,14 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                 ),
               ),
               Expanded(
-                child: ListView(
+                child: RefreshIndicator(
+                  onRefresh: () async {
+                    ref.invalidate(taskByIdProvider(widget.taskId));
+                    ref.invalidate(tasksProvider);
+                    await ref.read(taskByIdProvider(widget.taskId).future);
+                  },
+                  child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   children: [
                     // 主卡
@@ -321,7 +334,9 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(color: AppColors.pinkSoft, borderRadius: BorderRadius.circular(999)),
                                 child: Text(
-                                  t.origin == 'system' ? '系统任务' : '一起做 · TA 发起',
+                                  t.origin == 'system'
+                                      ? '系统任务'
+                                      : (isPublisher ? '一起做 · 我发起' : '一起做 · TA 发起'),
                                   style: const TextStyle(fontSize: 11, color: AppColors.brand),
                                 ),
                               ),
@@ -338,7 +353,10 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                           const SizedBox(height: 6),
                           Row(
                             children: [
-                              Text(t.origin == 'system' ? '系统派发' : 'TA 发布', style: AppText.label),
+                              Text(
+                                t.origin == 'system' ? '系统派发' : (isPublisher ? '我发布' : 'TA 发布'),
+                                style: AppText.label,
+                              ),
                               const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -363,8 +381,8 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                     ),
                     const SizedBox(height: 12),
 
-                    // 托管说明
-                    if (t.origin == 'custom')
+                    // 托管说明（已完成就不再显示「正在托管中」）
+                    if (t.origin == 'custom' && t.status != 'confirmed')
                       AppCard(
                         color: AppColors.subtle,
                         child: Row(
@@ -401,7 +419,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                       _deadlineBar(t),
                     ],
 
-                    // 提交内容（对方提交的照片和文案）
+                    // 提交内容（谁提交就显示谁的）
                     if (t.status == 'submitted' || t.status == 'confirmed') ...[
                       if (t.submitNote != null || t.submitPhotoUrl != null) ...[
                         const SizedBox(height: 12),
@@ -410,24 +428,31 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('TA 的提交', style: AppText.caption),
+                              Text(submitterName, style: AppText.caption),
                               const SizedBox(height: 8),
                               if (t.submitNote != null)
                                 Text(t.submitNote!, style: const TextStyle(fontSize: 14, height: 1.6, color: AppColors.text)),
                               if (t.submitPhotoUrl != null) ...[
                                 const SizedBox(height: 10),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(AppRadius.md),
-                                  child: Image.network(
-                                    t.submitPhotoUrl!,
-                                    width: double.infinity,
-                                    height: 180,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => const SizedBox(
-                                      height: 60,
-                                      child: Center(child: Text('照片加载失败', style: AppText.caption)),
+                                GestureDetector(
+                                  onTap: () => _openPhoto(t.submitPhotoUrl!),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(AppRadius.md),
+                                    child: Image.network(
+                                      t.submitPhotoUrl!,
+                                      width: double.infinity,
+                                      height: 180,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => const SizedBox(
+                                        height: 60,
+                                        child: Center(child: Text('照片加载失败', style: AppText.caption)),
+                                      ),
                                     ),
                                   ),
+                                ),
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 6),
+                                  child: Text('点图片可以看大图', style: AppText.caption),
                                 ),
                               ],
                             ],
@@ -436,14 +461,25 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                       ],
                     ],
 
+                    // 完成详情：归档任务点进来也能看清整件事的来龙去脉
+                    if (t.status == 'confirmed') ...[
+                      const SizedBox(height: 12),
+                      _completionCard(t, isAssignee, isPublisher),
+                    ],
+
                     const SizedBox(height: 16),
                     Center(
                       child: Text(
-                        t.status == 'confirmed' ? '已完成，星星已到账' : '确认后不能撤回，想清楚再点',
+                        t.status == 'confirmed'
+                            ? '这件事已经完成，星星已到账'
+                            : (t.status == 'submitted' && !isAssignee
+                                ? '确认后星星立刻到账，不能撤回'
+                                : (t.status == 'submitted' ? '等 TA 确认后星星就到账' : '')),
                         style: AppText.caption,
                       ),
                     ),
                   ],
+                  ),
                 ),
               ),
 
@@ -464,6 +500,101 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('加载失败：$e', style: const TextStyle(color: Colors.redAccent))),
+      ),
+    );
+  }
+
+  /// 照片看大图
+  void _openPhoto(String url) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(12),
+        child: Stack(
+          children: [
+            InteractiveViewer(
+              minScale: 1,
+              maxScale: 4,
+              child: Center(child: Image.network(url, fit: BoxFit.contain)),
+            ),
+            Positioned(
+              right: 4,
+              top: 4,
+              child: IconButton(
+                onPressed: () => Navigator.pop(ctx),
+                icon: const Icon(Icons.close, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 完成详情：谁提交的、什么时候提交、谁确认的、星星去哪了
+  Widget _completionCard(Task t, bool isAssignee, bool isPublisher) {
+    String fmt(DateTime? d) {
+      if (d == null) return '—';
+      final l = d.toLocal();
+      String two(int v) => v.toString().padLeft(2, '0');
+      return '${l.month} 月 ${l.day} 日 ${two(l.hour)}:${two(l.minute)}';
+    }
+
+    final confirmer = t.confirmedBy == null
+        ? '—'
+        : t.confirmedBy == 'system'
+            ? '系统自动确认'
+            : (t.confirmedBy == (isAssignee ? t.assigneeId : t.publisherId)
+                ? '我确认的'
+                : 'TA 确认的');
+
+    return AppCard(
+      color: AppColors.greenBg,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.check_circle, size: 18, color: AppColors.green),
+              const SizedBox(width: 8),
+              const Text('完成详情', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)),
+              const Spacer(),
+              Row(
+                children: [
+                  Text('+${t.reward}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: AppColors.goldDeep)),
+                  const SizedBox(width: 2),
+                  const Text('★', style: TextStyle(fontSize: 12, color: AppColors.gold)),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _kv('提交人', isAssignee ? '我' : 'TA'),
+          _kv('提交时间', fmt(t.submittedAt)),
+          _kv('确认人', confirmer),
+          _kv('确认时间', fmt(t.confirmedAt)),
+          if (t.acceptedAt != null) _kv('接受时间', fmt(t.acceptedAt)),
+          const SizedBox(height: 6),
+          Text(
+            t.origin == 'system'
+                ? '系统任务：星星由系统发放给执行人。'
+                : '托管任务：${t.reward} 星从托管账户转给执行人，发布方不再额外扣星。',
+            style: AppText.caption,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _kv(String k, String v) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          SizedBox(width: 72, child: Text(k, style: AppText.caption)),
+          Expanded(child: Text(v, style: const TextStyle(fontSize: 13, color: AppColors.text))),
+        ],
       ),
     );
   }
@@ -507,23 +638,15 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
       );
     }
 
-    // 待确认（发布人）
-    if (t.status == 'submitted' && isPublisher) {
-      return Row(
-        children: [
-          Expanded(
-            flex: 2,
-            child: OutlinedButton(onPressed: () => _act('cancel'), child: const Text('再想想')),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            flex: 4,
-            child: ElevatedButton(
-              onPressed: () => _act('confirm'),
-              child: Text('确认完成，给 ${t.reward} 星'),
-            ),
-          ),
-        ],
+    // 待确认（确认方）：自定义任务=发布人，系统任务=另一位
+    // 对方已经提交就不能再取消（服务端也会拒绝），所以这里只留确认按钮。
+    if (t.status == 'submitted' && !isAssignee) {
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton(
+          onPressed: () => _act('confirm'),
+          child: Text('确认完成，给 ${t.reward} 星'),
+        ),
       );
     }
 

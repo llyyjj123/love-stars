@@ -47,7 +47,7 @@ class _ItemsPageState extends ConsumerState<ItemsPage> with SingleTickerProvider
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('我们的小任务', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppColors.text)),
+                      Text('我们的小确幸', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppColors.text)),
                       SizedBox(height: 2),
                       Text('用星星换一点小开心', style: AppText.caption),
                     ],
@@ -452,7 +452,8 @@ class _RedeemableTab extends ConsumerWidget {
                           const Icon(Icons.info_outline, size: 14, color: AppColors.brand),
                           const SizedBox(width: 6),
                           Expanded(
-                            child: Text('TA 目前有 ${inbox.length} 件待兑现，兑换前可以先看看 TA 的积压。',
+                            // inbox = fulfillBy 是我的兑换单，也就是「我欠 TA 的」
+                            child: Text('你还有 ${inbox.length} 件没兑现，记得抽空给 TA 补上。',
                                 style: const TextStyle(fontSize: 11, color: AppColors.text2)),
                           ),
                         ],
@@ -696,32 +697,7 @@ class _RecordsTab extends ConsumerWidget {
                       style: TextStyle(fontSize: 10, color: r.isPending ? AppColors.brand : AppColors.green),
                     ),
                   ),
-                  if (r.isPending) ...[
-                    const SizedBox(width: 6),
-                    GestureDetector(
-                      onTap: () async {
-                        try {
-                          await ref.read(apiClientProvider).nudge(r.id);
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已经提醒 TA 啦')));
-                          }
-                        } catch (e) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-                          }
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: AppColors.pinkSoft,
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: AppColors.tint),
-                        ),
-                        child: const Text('催一催', style: TextStyle(fontSize: 10, color: AppColors.brand)),
-                      ),
-                    ),
-                  ],
+
                 ],
               ),
             );

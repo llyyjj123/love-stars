@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import '../../core/nav.dart';
 import '../../core/theme/tokens.dart';
 import '../../data/providers/providers.dart';
 import '../../widgets/app_card.dart';
@@ -50,7 +50,7 @@ class _CheckinPageState extends ConsumerState<CheckinPage> {
             child: Row(
               children: [
                 IconButton(
-                  onPressed: () => context.pop(),
+                  onPressed: () => popOrHome(context),
                   icon: const Icon(Icons.arrow_back),
                   style: IconButton.styleFrom(backgroundColor: AppColors.surface),
                 ),

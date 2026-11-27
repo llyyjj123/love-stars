@@ -2,8 +2,8 @@ import 'dart:io' show File;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../core/nav.dart';
 import '../../core/theme/tokens.dart';
 import '../../data/models/models.dart';
 import '../../data/providers/providers.dart';
@@ -85,7 +85,7 @@ class _FulfillPageState extends ConsumerState<FulfillPage> {
       ref.invalidate(myRedemptionsProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已兑现，TA 会收到通知')));
-        context.pop();
+        popOrHome(context);
       }
     } catch (e) {
       if (mounted) {
@@ -115,7 +115,7 @@ class _FulfillPageState extends ConsumerState<FulfillPage> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: IconButton(
-                  onPressed: () => context.pop(),
+                  onPressed: () => popOrHome(context),
                   icon: const Icon(Icons.close),
                   style: IconButton.styleFrom(backgroundColor: AppColors.surface),
                 ),
@@ -242,7 +242,7 @@ class _FulfillPageState extends ConsumerState<FulfillPage> {
                   Expanded(
                     flex: 2,
                     child: OutlinedButton(
-                      onPressed: () => context.pop(),
+                      onPressed: () => popOrHome(context),
                       child: const Text('还没好'),
                     ),
                   ),

@@ -61,6 +61,9 @@ class SessionNotifier extends StateNotifier<AsyncValue<Session>> {
     ref.invalidate(inboxRedemptionsProvider);
     ref.invalidate(ledgerPageProvider);
     ref.invalidate(systemTaskProvider);
+    ref.invalidate(taskByIdProvider);
+    ref.invalidate(giftsSentProvider);
+    ref.invalidate(giftsReceivedProvider);
   }
 
   void expireSession() {
@@ -142,7 +145,11 @@ final tasksProvider = FutureProvider.family<List<Task>, String>((ref, scope) asy
   return ref.watch(apiClientProvider).tasks(scope: scope);
 });
 
-final taskByIdProvider = FutureProvider.family<Task?, String>((ref, id) async {
+/// 任务详情：autoDispose，离开页面即销毁。
+///
+/// 之前是普通 family，取过一次就永久缓存 —— 对方提交后你再点进详情，
+/// 看到的还是「进行中」，没有提交内容也没有确认按钮（iOS 长期挂后台尤其明显）。
+final taskByIdProvider = FutureProvider.autoDispose.family<Task?, String>((ref, id) async {
   return ref.watch(apiClientProvider).taskById(id);
 });
 
@@ -171,6 +178,15 @@ final pendingConfirmProvider = FutureProvider<List<Task>>((ref) async {
 // ---------- 物品 ----------
 final itemsProvider = FutureProvider<List<Item>>((ref) async {
   return ref.watch(apiClientProvider).items();
+});
+
+// ---------- 送星星 / 小纸条 ----------
+final giftsSentProvider = FutureProvider.autoDispose<List<Gift>>((ref) async {
+  return ref.watch(apiClientProvider).gifts(scope: 'sent');
+});
+
+final giftsReceivedProvider = FutureProvider.autoDispose<List<Gift>>((ref) async {
+  return ref.watch(apiClientProvider).gifts(scope: 'received');
 });
 
 // ---------- 兑换 ----------

@@ -12,6 +12,13 @@ export const CHECKIN = { base: 1, cycleLength: 7, cycleBonus: 5 };
 export const OPENING = 20;
 export const REDEMPTION = { maxQuantity: 99, noteMaxLength: 100, nudgeCooldownMs: 24 * 3600_000 };
 
+/** 送星星规则 */
+export const GIFT = {
+  noteMaxLength: 100,
+  /** 单日累计上限，防止手滑把余额一次送空 */
+  dailyLimit: 50,
+};
+
 export function dateKeyOf(d: Date, tzOffsetMinutes = 480): string {
   const ms = d.getTime() + tzOffsetMinutes * 60_000;
   const t = new Date(ms);
@@ -192,9 +199,20 @@ export class PrismaService {
       if (!t) throw new AppError('TASK_NOT_FOUND');
       if (t.assigneeId !== userId) throw new AppError('TASK_NOT_ALLOWED');
       if (t.status !== 'pending') throw new AppError('TASK_ILLEGAL_TRANSITION');
+      // 重新加入 = 开新一轮：上一轮的提交内容/计时必须一起清掉，
+      // 否则系统任务被放弃后再抽到，会显示上一轮的照片和附言。
       const task = await tx.task.update({
         where: { id: taskId },
-        data: { status: 'assigned', submittedAt: null, confirmedAt: null, confirmedBy: null },
+        data: {
+          status: 'assigned',
+          submittedAt: null,
+          submitPhotoUrl: null,
+          submitNote: null,
+          acceptedAt: null,
+          deadlineAt: null,
+          confirmedAt: null,
+          confirmedBy: null,
+        },
       });
       await tx.outbox.create({ data: { event: 'task.assigned', toUserId: userId, payload: { taskId } } });
       return task;
@@ -327,6 +345,11 @@ export class PrismaService {
       }
       // cancel
       if (status === 'confirmed' || status === 'cancelled') throw new AppError('TASK_ILLEGAL_TRANSITION');
+      // 对方已经提交后，发布方不能再取消退款：否则等于白拿对方的劳动。
+      // 此时只能确认，或等 7 天自动确认。
+      if (status === 'submitted' && operatorId === publisherId) {
+        throw new AppError('TASK_ALREADY_SUBMITTED');
+      }
       if (operatorId !== publisherId && operatorId !== assigneeId) throw new AppError('TASK_NOT_ALLOWED');
       await refundIfCustom();
       // 系统任务被放弃/取消，回到池子而不是标记废弃，避免任务越用越少。
@@ -453,9 +476,10 @@ export class PrismaService {
       if (total <= 0) continue;
       const pct = (elapsed / total) * 100;
 
-      // 补齐所有已经越过的阶段：扫描间隔 5 分钟，可能一次跨过 50% 和 75%，
-      // 只看"当前落在哪档"会把 50% 的提醒永久丢掉。
-      const reached = [50, 75, 100].filter((s) => pct >= s);
+      // 只提醒一次「过半」。75% 和超时都不再推送：
+      //   1) Server酱 每个 key 只有 5 条/天，多一档就会把「等你确认」挤掉
+      //   2) 超时那一刻任务已不是 accepted，本来就发不出去，留着是死代码
+      const reached = [50].filter((s) => pct >= s);
       if (reached.length === 0) continue;
 
       const sent = await this.prisma.auditLog.findMany({
@@ -636,6 +660,59 @@ export class PrismaService {
       data: { event: 'redemption.nudged', toUserId: r.fulfillBy, payload: { redemptionId } },
     });
     return { nextAllowedAt: new Date(Date.now() + REDEMPTION.nudgeCooldownMs) };
+  }
+
+  // ---------- 送星星 ----------
+  /**
+   * 送星星：账户之间划转，不发行、不销毁。
+   * 所以 SUM(balance) 仍是 0，"只有签到和任务能发星"的封闭发行口也没被打开。
+   */
+  async sendGift(fromId: string, toId: string, amount: number, note?: string) {
+    if (fromId === toId) throw new AppError('GIFT_NOT_ALLOWED', 'cannot gift yourself');
+    if (!Number.isInteger(amount) || amount <= 0) throw new AppError('GIFT_AMOUNT_INVALID');
+    if (note && note.length > GIFT.noteMaxLength) throw new AppError('GIFT_NOTE_TOO_LONG');
+
+    return this.prisma.$transaction(async (tx) => {
+      // 单日上限：按服务端时区的自然日累计
+      const today = dateKeyOf(new Date());
+      const dayStart = new Date(new Date(today + 'T00:00:00.000Z').getTime() - 8 * 3600_000);
+      const agg = await tx.gift.aggregate({
+        where: { fromId, createdAt: { gte: dayStart } },
+        _sum: { amount: true },
+      });
+      const sentToday = agg._sum.amount ?? 0;
+      if (sentToday + amount > GIFT.dailyLimit) throw new AppError('GIFT_DAILY_LIMIT');
+
+      const gift = await tx.gift.create({
+        data: { fromId, toId, amount, note: note?.trim() ? note.trim() : null },
+      });
+
+      // 余额不足时这里抛 STARS_INSUFFICIENT，整笔回滚
+      await transfer(tx, {
+        fromAccountId: await this.accountId(fromId),
+        toAccountId: await this.accountId(toId),
+        amount,
+        bizType: 'gift',
+        bizId: gift.id,
+        memo: note?.trim() ? '送星星：' + note.trim().slice(0, 40) : '送星星',
+      });
+
+      await tx.outbox.create({
+        data: { event: 'gift.received', toUserId: toId, payload: { giftId: gift.id, amount } },
+      });
+
+      return { gift, balance: await this.balanceOf(fromId) };
+    });
+  }
+
+  /** 小纸条：我送出的 / 我收到的 */
+  async listGifts(userId: string, scope: 'sent' | 'received', limit = 50) {
+    const take = Math.min(100, Math.max(1, limit));
+    return this.prisma.gift.findMany({
+      where: scope === 'sent' ? { fromId: userId } : { toId: userId },
+      orderBy: { createdAt: 'desc' },
+      take,
+    });
   }
 
   async reconcile() {

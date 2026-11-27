@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import '../../core/nav.dart';
 import '../../core/theme/tokens.dart';
 import '../../data/providers/providers.dart';
 import '../../widgets/app_card.dart';
@@ -60,6 +60,8 @@ class _LedgerPageState extends ConsumerState<LedgerPage> {
     'task_settle': '任务完成',
     'task_reward': '任务完成',
     'task_refund': '任务退回',
+    'task_penalty': '超时赔偿',
+    'gift': '送星星',
     'burn': '兑换物品',
     'adjust': '调整',
   };
@@ -75,7 +77,7 @@ class _LedgerPageState extends ConsumerState<LedgerPage> {
             child: Row(
               children: [
                 IconButton(
-                  onPressed: () => context.pop(),
+                  onPressed: () => popOrHome(context),
                   icon: const Icon(Icons.arrow_back),
                   style: IconButton.styleFrom(backgroundColor: AppColors.surface),
                 ),
@@ -198,7 +200,13 @@ class _LedgerPageState extends ConsumerState<LedgerPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(_labels[type] ?? type, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.text)),
+                Text(
+                  // 送星星按分录方向区分：收到是 +，送出是 -
+                  type == 'gift'
+                      ? (isCredit ? 'TA 送我星星' : '送星星给 TA')
+                      : (_labels[type] ?? type),
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.text),
+                ),
                 if (e['memo'] != null && e['memo'].toString() != (_labels[type] ?? type))
                   Text(e['memo'].toString(), style: AppText.caption),
                 if (created != null)

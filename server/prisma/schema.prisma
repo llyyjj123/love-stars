@@ -27,6 +27,8 @@ model User {
   tasksAssigned  Task[] @relation("assignee")
   redemptions  Redemption[] @relation("redeemer")
   fulfillments Redemption[] @relation("fulfiller")
+  giftsSent     Gift[]   @relation("giftSender")
+  giftsReceived Gift[]   @relation("giftReceiver")
 }
 
 // ---------- 账本：三个虚拟账户 ----------
@@ -138,6 +140,23 @@ model Task {
 
   @@index([status, submittedAt])
   @@index([assigneeId, status])
+}
+
+// ---------- 送星星 ----------
+// 只是账户之间的划转（transfer bizType='gift'），不发行、不销毁，
+// 全局 SUM(balance) 仍为 0，所以不破坏「只有签到和任务能发星」的封闭发行口。
+model Gift {
+  id        String   @id @default(uuid())
+  fromId    String
+  from      User     @relation("giftSender", fields: [fromId], references: [id])
+  toId      String
+  to        User     @relation("giftReceiver", fields: [toId], references: [id])
+  amount    Int
+  note      String?      // 小纸条，最多 100 字
+  createdAt DateTime @default(now())
+
+  @@index([fromId, createdAt])
+  @@index([toId, createdAt])
 }
 
 // ---------- 物品（开发方预设，用户只读） ----------

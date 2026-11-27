@@ -194,6 +194,21 @@ class ApiClient {
   Future<Map<String, dynamic>> nudge(String redemptionId) =>
       _unwrap(() => _dio.post('/redemptions/$redemptionId/nudge'));
 
+  // ---------- 送星星 ----------
+  Future<Map<String, dynamic>> sendGift({required int amount, String? note}) =>
+      _unwrap(() => _dio.post(
+            '/gifts',
+            data: {'amount': amount, if (note != null && note.isNotEmpty) 'note': note},
+            options: Options(headers: {'idempotency-key': _newKey()}),
+          ));
+
+  Future<List<Gift>> gifts({String scope = 'sent'}) async {
+    final list = await _unwrap<List<dynamic>>(
+      () => _dio.get('/gifts', queryParameters: {'scope': scope}),
+    );
+    return list.map((e) => Gift.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
   // ---------- 媒体 ----------
   Future<String> uploadPhoto(String filePath) async {
     final form = FormData.fromMap({

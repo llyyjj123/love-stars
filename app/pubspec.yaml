@@ -1,7 +1,7 @@
 name: love_stars
 description: "情侣应用「星星」——签到赚星、发任务、兑换物品"
 publish_to: 'none'
-version: 1.3.1+6
+version: 1.5.0+7
 
 environment:
   sdk: ^3.14.0

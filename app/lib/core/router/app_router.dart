@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../data/providers/providers.dart';
 import '../../features/auth/login_page.dart';
+import '../../features/gifts/gift_page.dart';
+import '../../features/gifts/gift_success_page.dart';
+import '../../features/gifts/notes_page.dart';
 import '../../features/checkin/checkin_page.dart';
 import '../../features/home/home_page.dart';
 import '../../features/items/fulfill_page.dart';
@@ -66,6 +69,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) => RedemptionDetailPage(redemptionId: state.pathParameters['id']!),
       ),
       GoRoute(path: '/me/ledger', builder: (_, __) => const LedgerPage()),
+      GoRoute(path: '/me/gift', builder: (_, __) => const GiftPage()),
+      GoRoute(
+        path: '/me/gift/success',
+        builder: (_, state) => GiftSuccessPage(
+          amount: int.tryParse(state.uri.queryParameters['amount'] ?? '') ?? 0,
+        ),
+      ),
+      GoRoute(path: '/me/notes', builder: (_, __) => const NotesPage()),
       GoRoute(path: '/me/tasks', builder: (_, __) => const MyTasksPage()),
       GoRoute(path: '/me/settings', builder: (_, __) => const SettingsPage()),
     ],

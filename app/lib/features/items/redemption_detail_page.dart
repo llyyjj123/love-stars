@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import '../../core/nav.dart';
 import '../../core/theme/tokens.dart';
 import '../../data/models/models.dart';
 import '../../data/providers/providers.dart';
@@ -16,18 +16,34 @@ class RedemptionDetailPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final mine = ref.watch(myRedemptionsProvider);
     final inbox = ref.watch(inboxRedemptionsProvider);
+    final myId = ref.watch(sessionProvider).value?.user?.id;
 
     Redemption? r;
-    for (final list in [mine.value, inbox.value]) {
-      if (list == null) continue;
-      for (final x in list) {
+    bool inMine = false;
+    bool inInbox = false;
+    for (final x in mine.value ?? const <Redemption>[]) {
+      if (x.id == redemptionId) {
+        r = x;
+        inMine = true;
+        break;
+      }
+    }
+    if (r == null) {
+      for (final x in inbox.value ?? const <Redemption>[]) {
         if (x.id == redemptionId) {
           r = x;
+          inInbox = true;
           break;
         }
       }
-      if (r != null) break;
     }
+
+    // 角色决定文案：我是兑换人 → 「我留的话」/「TA 说」；
+    // 我是兑现人 → 「TA 留的话」/「我说」。
+    // 之前写死「我留的话」，从「待我兑现」进来时留言归属正好反了。
+    final iAmRedeemer = inMine || (!inInbox && myId != null);
+    final myNoteLabel = iAmRedeemer ? '我留的话' : 'TA 留的话';
+    final theirNoteLabel = iAmRedeemer ? 'TA 说' : '我说';
 
     return GradientScaffold(
       child: Column(
@@ -37,7 +53,7 @@ class RedemptionDetailPage extends ConsumerWidget {
             child: Row(
               children: [
                 IconButton(
-                  onPressed: () => context.pop(),
+                  onPressed: () => popOrHome(context),
                   icon: const Icon(Icons.arrow_back),
                   style: IconButton.styleFrom(backgroundColor: AppColors.surface),
                 ),
@@ -125,15 +141,21 @@ class RedemptionDetailPage extends ConsumerWidget {
                                   borderRadius: BorderRadius.circular(AppRadius.md),
                                   border: Border.all(color: AppColors.tint, style: BorderStyle.solid),
                                 ),
-                                child: const Center(
+                                child: Center(
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Icon(Icons.photo_camera_outlined, size: 32, color: AppColors.brand),
-                                      SizedBox(height: 8),
-                                      Text('等 TA 拍一张照片', style: TextStyle(fontSize: 13, color: AppColors.brand, fontWeight: FontWeight.w500)),
-                                      SizedBox(height: 2),
-                                      Text('兑现后照片会出现在这里', style: AppText.caption),
+                                      const Icon(Icons.photo_camera_outlined, size: 32, color: AppColors.brand),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        iAmRedeemer ? '等 TA 拍一张照片' : '轮到你拍一张照片',
+                                        style: const TextStyle(fontSize: 13, color: AppColors.brand, fontWeight: FontWeight.w500),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        iAmRedeemer ? '兑现后照片会出现在这里' : '去「待我兑现」里拍照兑现',
+                                        style: AppText.caption,
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -202,9 +224,9 @@ class RedemptionDetailPage extends ConsumerWidget {
 
                       // 我留的言
                       if (r.note != null && r.note!.isNotEmpty) ...[
-                        const Padding(
-                          padding: EdgeInsets.only(left: 4, bottom: 6),
-                          child: Text('我留的话', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 4, bottom: 6),
+                          child: Text(myNoteLabel, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
                         ),
                         AppCard(
                           color: AppColors.subtle,
@@ -215,9 +237,9 @@ class RedemptionDetailPage extends ConsumerWidget {
 
                       // TA 的留言
                       if (r.fulfillNote != null && r.fulfillNote!.isNotEmpty) ...[
-                        const Padding(
-                          padding: EdgeInsets.only(left: 4, bottom: 6),
-                          child: Text('TA 说', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 4, bottom: 6),
+                          child: Text(theirNoteLabel, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
                         ),
                         AppCard(
                           color: AppColors.pinkSoft,
@@ -235,28 +257,6 @@ class RedemptionDetailPage extends ConsumerWidget {
                         const SizedBox(height: 12),
                       ],
 
-                      // 待兑现：催一催
-                      if (r.isPending) ...[
-                        const SizedBox(height: 8),
-                        ElevatedButton(
-                          onPressed: () async {
-                            try {
-                              await ref.read(apiClientProvider).nudge(r!.id);
-                              ref.invalidate(myRedemptionsProvider);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('已经提醒 TA 啦')),
-                                );
-                              }
-                            } catch (e) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-                              }
-                            }
-                          },
-                          child: const Text('催一催'),
-                        ),
-                      ],
 
                       const SizedBox(height: 16),
                       const Center(

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import '../../core/nav.dart';
 import '../../core/theme/tokens.dart';
 import '../../widgets/gradient_scaffold.dart';
 import 'tasks_page.dart';
@@ -18,7 +18,7 @@ class MyTasksPage extends StatelessWidget {
             child: Row(
               children: [
                 IconButton(
-                  onPressed: () => context.pop(),
+                  onPressed: () => popOrHome(context),
                   icon: const Icon(Icons.arrow_back),
                   style: IconButton.styleFrom(backgroundColor: AppColors.surface),
                 ),

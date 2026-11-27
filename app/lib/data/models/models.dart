@@ -76,6 +76,8 @@ class Task {
   final DateTime? submittedAt;
   final String? submitPhotoUrl;
   final String? submitNote;
+  final DateTime? confirmedAt;
+  final String? confirmedBy;
   const Task({
     required this.id,
     required this.origin,
@@ -91,6 +93,8 @@ class Task {
     this.submittedAt,
     this.submitPhotoUrl,
     this.submitNote,
+    this.confirmedAt,
+    this.confirmedBy,
   });
 
   factory Task.fromJson(Map<String, dynamic> j) => Task(
@@ -108,6 +112,8 @@ class Task {
         submittedAt: j['submittedAt'] == null ? null : DateTime.parse(j['submittedAt'] as String),
         submitPhotoUrl: j['submitPhotoUrl'] as String?,
         submitNote: j['submitNote'] as String?,
+        confirmedAt: j['confirmedAt'] == null ? null : DateTime.parse(j['confirmedAt'] as String),
+        confirmedBy: j['confirmedBy'] as String?,
       );
 
   /// 状态中文名
@@ -123,6 +129,34 @@ class Task {
         'expired' => '已过期',
         _ => status,
       };
+}
+
+/// 送星星 = 账户之间划转，不发行不销毁
+class Gift {
+  final String id;
+  final String fromId;
+  final String toId;
+  final int amount;
+  final String? note;
+  final DateTime createdAt;
+
+  const Gift({
+    required this.id,
+    required this.fromId,
+    required this.toId,
+    required this.amount,
+    this.note,
+    required this.createdAt,
+  });
+
+  factory Gift.fromJson(Map<String, dynamic> j) => Gift(
+        id: j['id'] as String,
+        fromId: j['fromId'] as String,
+        toId: j['toId'] as String,
+        amount: (j['amount'] as num).toInt(),
+        note: j['note'] as String?,
+        createdAt: DateTime.parse(j['createdAt'] as String),
+      );
 }
 
 class Redemption {

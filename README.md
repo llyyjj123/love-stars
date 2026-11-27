@@ -22,8 +22,10 @@
 | 超时 | 托管退还 + 执行人赔偿；系统任务回到池子 |
 | 兑换 | 9 个预设物品；星星**直接销毁**（用户 → issue），不可逆 |
 | 兑现 | 对方上传照片或文字确认，完成后发起方可确认 |
+| 送星 | 账户间划转（不发行），可附 100 字小纸条，单日上限 50 星 |
+| 小纸条 | 「我的 → 小纸条」收录所有送星留言，收到/送出分开看 |
 | 账本 | 每笔星星流动都有借贷两条分录，全局 `SUM(balance) == 0` |
-| 推送 | Server酱 → 微信，覆盖新任务 / 截止提醒 / 超时 / 待确认 |
+| 推送 | Server酱 → 微信，共 5 种：新任务 / 时间过半 / 对方提交 / 收到星星 / 待兑现 |
 
 ---
 
@@ -65,7 +67,9 @@ love/
 5. 自定义任务**发布时即扣星进托管**，不是确认时才扣
 6. **兑换即销毁**（用户 → issue），因此 `-issue.balance` 是**净发行量**
 7. **兑换不可逆**：没有取消、退款或超时
-8. `ref.listen` **只能在 `build` 里调用**，写进 `initState` 会崩（有测试守着）
+8. **送星不是发星**：走 `transfer()` 账户间划转，不碰 issue 账户，`SUM(balance)` 仍为 0
+9. `ref.listen` **只能在 `build` 里调用**，写进 `initState` 会崩（有测试守着）
+10. **对方提交后发布方不能取消**：服务端 409 `TASK_ALREADY_SUBMITTED`，否则等于白拿对方劳动
 
 ---
 
@@ -113,7 +117,8 @@ ALLOW_DB_TEST_RESET=1 npm run test:db    # 数据库测试（会清库！）
 cd app && flutter test    # Widget 测试
 
 # 端到端
-node scripts/smoke.js     # 31 项 API 冒烟（需先启动服务端）
+node scripts/smoke.js     # 40 项 API 冒烟（需先启动服务端）
+node scripts/e2e-full.js  # 72 项全功能验收，跑完自动还原 20/20
 node scripts/verify-ws.js # WebSocket 全链路
 ```
 

@@ -87,8 +87,14 @@ class ProfilePage extends ConsumerWidget {
           ),
           const SizedBox(height: 12),
 
-          // 星星账本按钮
-          ElevatedButton(
+          // 送星星
+          ElevatedButton.icon(
+            onPressed: () => context.push('/me/gift'),
+            icon: const Icon(Icons.favorite, size: 16),
+            label: const Text('送 TA 星星'),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton(
             onPressed: () => context.push('/me/ledger'),
             child: const Text('星星账本'),
           ),
@@ -99,6 +105,8 @@ class ProfilePage extends ConsumerWidget {
             padding: EdgeInsets.zero,
             child: Column(
               children: [
+                _menuItem(context, Icons.sticky_note_2_outlined, '小纸条', '送星星时写下的话', '/me/notes'),
+                const Divider(height: 1, color: AppColors.border),
                 _menuItem(context, Icons.receipt_long, '星星账本', '每一颗都有来处', '/me/ledger'),
                 const Divider(height: 1, color: AppColors.border),
                 _menuItem(context, Icons.checklist, '我的任务', '我发布的和我在做的', '/me/tasks'),

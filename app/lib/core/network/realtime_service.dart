@@ -117,6 +117,16 @@ class RealtimeService {
         _ref.invalidate(walletProvider);
         _ref.invalidate(bothWalletsProvider);
         _ref.invalidate(systemTaskProvider);
+        // 详情页也必须失效：否则对方提交后点进去还是「进行中」，
+        // 既看不到照片文案，也没有确认按钮。
+        _ref.invalidate(taskByIdProvider);
+        break;
+
+      case 'gift.received':
+        _ref.invalidate(walletProvider);
+        _ref.invalidate(bothWalletsProvider);
+        _ref.invalidate(giftsReceivedProvider);
+        _ref.invalidate(giftsSentProvider);
         break;
     }
   }

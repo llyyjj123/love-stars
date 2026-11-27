@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/nav.dart';
 import '../../core/theme/tokens.dart';
 import '../../data/providers/providers.dart';
 import '../../widgets/app_card.dart';
@@ -68,7 +69,7 @@ class _PublishTaskPageState extends ConsumerState<PublishTaskPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('已发布，$_reward 星进入托管')),
         );
-        context.pop();
+        popOrHome(context);
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
@@ -173,7 +174,7 @@ class _PublishTaskPageState extends ConsumerState<PublishTaskPage> {
             child: Row(
               children: [
                 IconButton(
-                  onPressed: () => context.pop(),
+                  onPressed: () => popOrHome(context),
                   icon: const Icon(Icons.arrow_back),
                   style: IconButton.styleFrom(backgroundColor: AppColors.surface),
                 ),
@@ -402,7 +403,7 @@ class _PublishTaskPageState extends ConsumerState<PublishTaskPage> {
                   Expanded(
                     flex: 2,
                     child: OutlinedButton(
-                      onPressed: () => context.pop(),
+                      onPressed: () => popOrHome(context),
                       child: const Text('存草稿'),
                     ),
                   ),
