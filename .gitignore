@@ -97,3 +97,4 @@ love-release.jks
 *.apk
 *.ipa
 LoveStars-*.apk
+.build-tmp/
