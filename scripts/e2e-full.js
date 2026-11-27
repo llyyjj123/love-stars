@@ -318,6 +318,17 @@ async function main() {
 
   // ---------- 10. 还原 20/20 ----------
   step('10. 还原到 20 / 20');
+  const isLocal = /127\.0\.0\.1|localhost/.test(BASE);
+  if (!isLocal) {
+    // 远端跑时不能在本机执行 reset.js（那会重置本地库，跟被测库不是同一个）。
+    info('检测到远端 API，跳过自动还原。请在服务器上执行：cd /opt/love-stars/server && node dist/src/reset.js');
+    console.log('\n' + '='.repeat(50));
+    console.log(c.green + '  PASS: ' + pass + c.reset + '   ' + (fail ? c.red : c.dim) + 'FAIL: ' + fail + c.reset);
+    console.log('='.repeat(50));
+    if (fail) console.log(c.red + '\n失败项：\n  - ' + fails.join('\n  - ') + '\n' + c.reset);
+    process.exitCode = fail === 0 ? 0 : 1;
+    return;
+  }
   const resetOut = execFileSync(process.execPath, ['dist/src/reset.js'], { cwd: SERVER_DIR, encoding: 'utf8' });
   const m = /A balance:\s*(\d+)[\s\S]*B balance:\s*(\d+)/.exec(resetOut);
   if (m) {
