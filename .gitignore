@@ -84,6 +84,12 @@ docs/
 server/data/media/
 server/data/
 
+# ---------- 签名备份（绝不能入库，泄露后任何人都能伪造更新包） ----------
+debug.keystore.backup
+*.keystore
+*.keystore.backup
+love-release.jks
+
 # ---------- Flutter 工具状态 ----------
 .flutter_tool_state
 
